@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drug Discovery Report — {{ disease }}</title>
+<style>
+  :root { --bg:#0a0a0b; --fg:#e4e4e7; --muted:#71717a; --line:#27272a; --card:#111114; --accent:#34d399; --warn:#f59e0b; --bad:#f87171; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); max-width: 1100px; margin: 2em auto; padding: 0 1.5em; line-height: 1.55; }
+  h1 { font-weight: 600; letter-spacing: -0.02em; border-bottom: 1px solid var(--line); padding-bottom: 0.5em; }
+  h2 { color: var(--accent); font-weight: 500; margin-top: 2.4em; font-size: 1.1em; text-transform: uppercase; letter-spacing: 0.06em; }
+  .meta { color: var(--muted); font-size: 0.85em; }
+  .card { background: var(--card); border: 1px solid var(--line); padding: 1em 1.2em; border-radius: 6px; margin: 1em 0; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 0.9em; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; }
+  th { color: var(--muted); font-weight: 500; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.smiles { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 0.78em; max-width: 360px; word-break: break-all; color: #a1a1aa; }
+  .pass { color: var(--accent); }
+  .fail { color: var(--bad); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72em; font-weight: 500; letter-spacing: 0.03em; }
+  .pill-approved { background: rgba(52, 211, 153, 0.15); color: var(--accent); border: 1px solid rgba(52, 211, 153, 0.3); }
+  .pill-novel { background: rgba(113, 113, 122, 0.15); color: var(--muted); border: 1px solid var(--line); }
+  .pill-easy { background: rgba(52, 211, 153, 0.15); color: var(--accent); }
+  .pill-mod { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
+  .pill-hard { background: rgba(248, 113, 113, 0.15); color: var(--bad); }
+  pre.summary { background: #0f0f12; padding: 1.2em; border-left: 2px solid var(--accent); white-space: pre-wrap; font-size: 0.86em; border-radius: 4px; overflow-x: auto; }
+  .footnote { color: var(--muted); font-size: 0.8em; border-top: 1px solid var(--line); padding-top: 1em; margin-top: 3em; }
+  .stat { display: inline-block; margin-right: 2em; }
+  .stat-label { color: var(--muted); font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-size: 1.3em; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>{{ disease }}</h1>
+<p class="meta">Job <code>{{ job_id }}</code> · Generated {{ generated_at }}{% if confidence %} · Confidence: <strong style="color:var(--accent)">{{ confidence }}</strong>{% endif %}</p>
+
+{% if target %}
+<h2>Selected Target</h2>
+<div class="card">
+  <div class="stat"><div class="stat-label">UniProt</div><div class="stat-value">{{ target.uniprot_id }}</div></div>
+  <div class="stat"><div class="stat-label">Protein</div><div class="stat-value">{{ target.protein_name }}</div></div>
+  {% if target.druggability_score is not none %}
+  <div class="stat"><div class="stat-label">Druggability</div><div class="stat-value">{{ "%.3f"|format(target.druggability_score) }}</div></div>
+  {% endif %}
+  {% if target.rationale %}
+  <p style="margin-top:1em; color: var(--fg)">{{ target.rationale }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if structure %}
+<h2>Structure</h2>
+<div class="card">
+  <div class="stat"><div class="stat-label">Source</div><div class="stat-value">{{ structure.source }}</div></div>
+  {% if structure.quality_score and structure.quality_score > 0 %}
+  <div class="stat"><div class="stat-label">{{ "pLDDT" if structure.source == "AlphaFold" else "Quality" }}</div><div class="stat-value">{{ "%.1f"|format(structure.quality_score) }}</div></div>
+  {% endif %}
+  <p class="meta" style="margin-top:0.6em">File: <code>{{ structure.pdb_path }}</code></p>
+</div>
+{% endif %}
+
+{% macro candidate_row(c) %}
+<tr>
+  <td>{{ c.rank }}</td>
+  <td class="smiles">{% if c.molecule_name %}<strong style="color:var(--fg)">{{ c.molecule_name }}</strong><br>{% endif %}{{ c.molecule_smiles }}</td>
+  <td>{{ "%.2f"|format(c.binding_affinity) }}</td>
+  <td class="{{ 'pass' if c.lipinski_pass else 'fail' }}">{{ "✓" if c.lipinski_pass else "✗" }}</td>
+  <td>
+    {% if c.synthesis_score is not none %}
+      {% set sa = c.synthesis_score %}
+      <span class="pill {% if sa < 3.5 %}pill-easy{% elif sa < 6 %}pill-mod{% else %}pill-hard{% endif %}">{{ "%.1f"|format(sa) }}</span>
+    {% endif %}
+  </td>
+  <td>{{ "%.2f"|format(c.toxicity_score) if c.toxicity_score is not none else "—" }}</td>
+  <td>{{ "%.2f"|format(c.absorption_score) if c.absorption_score is not none else "—" }}</td>
+  <td>
+    {% if c.is_approved_drug %}<span class="pill pill-approved">FDA</span>{% else %}<span class="pill pill-novel">novel</span>{% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+{% if approved_candidates %}
+<h2>🎯 Repurposing Candidates (FDA-approved)</h2>
+<p class="meta">Approved drugs already have characterized PK/toxicity — these are fast-track repurposing leads.</p>
+<table>
+  <tr><th>#</th><th>Molecule</th><th>Affinity</th><th>Lipinski</th><th>SA</th><th>Tox</th><th>Abs</th><th>Status</th></tr>
+  {% for c in approved_candidates %}{{ candidate_row(c) }}{% endfor %}
+</table>
+{% endif %}
+
+{% if novel_candidates %}
+<h2>Novel Candidates</h2>
+<table>
+  <tr><th>#</th><th>Molecule</th><th>Affinity</th><th>Lipinski</th><th>SA</th><th>Tox</th><th>Abs</th><th>Status</th></tr>
+  {% for c in novel_candidates %}{{ candidate_row(c) }}{% endfor %}
+</table>
+{% endif %}
+
+{% if not candidates %}
+<h2>Top Candidates</h2>
+<p class="meta">No structured candidates were extracted. See agent summary below.</p>
+{% endif %}
+
+{% if limitations %}
+<h2>Limitations</h2>
+<div class="card"><p>{{ limitations }}</p></div>
+{% endif %}
+
+{% if summary_text %}
+<h2>Agent Rationale</h2>
+<div class="card">
+  <pre class="summary" style="background:none; border:none; padding:0; margin:0;">{{ summary_text }}</pre>
+</div>
+{% endif %}
+
+<p class="footnote">
+  <strong>SA score legend:</strong>
+  <span class="pill pill-easy">&lt;3.5 easy</span>
+  <span class="pill pill-mod">3.5–6 moderate</span>
+  <span class="pill pill-hard">&gt;6 hard to synthesize</span><br>
+  ⚠ Docking and ADMET use heuristic stubs. Replace with AutoDock Vina + ADMETlab2 for production.
+</p>
+</body>
+</html>
