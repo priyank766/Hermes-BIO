@@ -8,17 +8,17 @@ AlphaFold, ChEMBL) + RDKit.
 
 Three things most academic pipelines skip:
 
-1. ** Repurposing-first.** The agent screens FDA-approved drugs (max_phase=4 in
+1. **Repurposing-first:** The agent screens FDA-approved drugs (max_phase=4 in
    ChEMBL, with measured activity against the target) *before* novel ChEMBL
    compounds. Approved drugs already have characterized PK and toxicity, so a
    computational hit is a fast-track repurposing candidate.
 
-2. ** Synthesizability scoring (SAScore).** Every top binder is scored on a
+2. **Synthesizability scoring (SAScore):** Every top binder is scored on a
    1.0 (easy)–10.0 (very hard) scale per Ertl & Schuffenhauer 2009. A
    high-affinity hit you cannot make is worthless; this filter is missing from
    most pipelines.
 
-3. ** Live SSE reasoning stream.** The frontend subscribes to a Server-Sent
+3. **Live SSE reasoning stream:** The frontend subscribes to a Server-Sent
    Events stream and renders the agent's thinking, tool calls, and retries in
    real time as it works.
 
