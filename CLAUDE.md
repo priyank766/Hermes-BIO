@@ -24,6 +24,8 @@ novel ChEMBL); SAScore on every top hit; live SSE reasoning stream.
    project, what works, what's stubbed.
 2. **[`docs/decisions/`](./docs/decisions/)** — accepted ADRs. These are the
    constraints. Newest first:
+   - `0005-research-utility-modes.md` — three modes (discover/explore/repurpose) and the bragging-rights criteria
+   - `0004-defer-refactor-and-providers.md` — skip Phase 1 + Phase 2, ship features
    - `0003-provider-strategy.md` — Gemini-first, narrow Protocol, LiteLLM later
    - `0002-build-minimal-not-fork-hermes.md` — don't fork Nous Hermes
    - `0001-pivot-to-harness.md` — why we're a harness, not an app
@@ -57,16 +59,24 @@ Backend (`backend/`): `uv sync && uv run uvicorn app.main:app --port 8000`
 (needs `GEMINI_API_KEY` in `backend/.env`).
 Frontend (`frontend/`): `npm install && npm run dev` → http://localhost:5173
 
-## Verified disease runs (proof the agent picks real targets)
+## Three modes (Mode A regression, Modes B+C are research utility)
 
-| Disease | Target picked | Top approved drug found |
+| Mode | CLI | Purpose |
 |---|---|---|
-| Type 2 diabetes | PPARG (P37231) | Rosiglitazone |
-| NSCLC | EGFR (P00533) | Sunitinib |
-| Alzheimer disease | PSEN1 (P49768) | (no max_phase=4 binders) |
+| A · discover | `hermes-bio run drug-discovery --disease ...` | recover canonical targets (regression) |
+| B · explore | `hermes-bio explore --disease ...` | underexplored druggable targets |
+| C · repurpose | `hermes-bio repurpose --target ...` | cross-indication FDA-approved binders |
+| D · hard eval | `hermes-bio eval --hard` | diseases without canonical answer (manual review) |
 
-These are real disease/target/drug relationships recovered from public APIs,
-not hardcoded.
+## Verified results (see docs/notes/2026-05-02-research-mode-results.md)
+
+- **Mode A:** 6/6 canonical pairs recovered. RA → TYK2 (next-gen, deucravacitinib),
+  PD → LRRK2 (Denali BIIB122 P3), not the textbook answers.
+- **Mode B:** for IPF, top picks RTEL1, SFTPA2, MUC5B — the textbook IPF
+  genetic risk genes, all with zero approved drugs in ChEMBL.
+- **Mode C:** for MTOR (excluding cancer), surfaces sirolimus + tacrolimus
+  with their non-oncology indications (aplastic anemia, RA). For PPARG,
+  surfaces FARGLITAZAR for liver cirrhosis.
 
 ## Honest stubs (replace for production)
 

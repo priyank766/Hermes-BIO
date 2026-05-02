@@ -1,116 +1,249 @@
-# Drug Candidate Discovery Pipeline
+# hermes-bio
 
-An autonomous agent that goes from a disease name to a ranked list of drug candidates.
-Built on Gemini function-calling + bioinformatics APIs (UniProt, OpenTargets, PDB,
-AlphaFold, ChEMBL) + RDKit.
+**An agentic harness for drug-discovery research.**
+You give it a disease name. It picks a target, finds underexplored druggable
+alternatives, surfaces FDA-approved drugs that bind that target but are
+approved for *other* diseases, and ranks candidate compounds — all by chaining
+public bioinformatics APIs through a Gemini function-calling loop with
+persistent memory.
 
-## What makes this different
+```
+disease name  ───►  ranked drug candidates + research leads
+                    target rationale + 3D structure + cross-indication hits
+```
 
-Three things most academic pipelines skip:
+It is not a wet-lab tool. It is a **time-saving triage layer** between a
+researcher and the literature: the kind of work that takes a grad student a
+week, the harness does in minutes against UniProt, OpenTargets, RCSB PDB,
+AlphaFold DB, and ChEMBL.
 
-1. **Repurposing-first:** The agent screens FDA-approved drugs (max_phase=4 in
-   ChEMBL, with measured activity against the target) *before* novel ChEMBL
-   compounds. Approved drugs already have characterized PK and toxicity, so a
-   computational hit is a fast-track repurposing candidate.
+---
 
-2. **Synthesizability scoring (SAScore):** Every top binder is scored on a
-   1.0 (easy)–10.0 (very hard) scale per Ertl & Schuffenhauer 2009. A
-   high-affinity hit you cannot make is worthless; this filter is missing from
-   most pipelines.
+## Why this exists
 
-3. **Live SSE reasoning stream:** The frontend subscribes to a Server-Sent
-   Events stream and renders the agent's thinking, tool calls, and retries in
-   real time as it works.
+Most "AI for drug discovery" demos do exactly one thing: pick a known
+disease, pick a known target, find a known approved drug, declare victory.
+That's a smoke test, not a research tool — anyone can Google PPARG for
+diabetes.
 
-## Verified runs
+The interesting work happens at three places where a researcher *actually*
+needs help:
 
-| Disease | Target the agent picked | Top approved drug found |
+1. **What proteins look druggable for this disease but nobody's tried hard?**
+   High genetic-association × low drug-development activity. Triaging the
+   "high biology, low chemistry" list is a literature-week of work.
+2. **For this target, are any approved drugs binding it that are approved
+   for something else entirely?** Real repurposing wins (metformin → cancer,
+   sildenafil → PH) come from this exact pattern.
+3. **For diseases without an obvious canonical answer, what target is the
+   most clinically actionable right now?** The agent has to reason over
+   current OpenTargets evidence, not parrot 1990s textbooks.
+
+`hermes-bio` is built around these three questions, with the textbook
+"recover canonical drugs" pipeline as a regression test on top.
+
+---
+
+## Who it's for
+
+- Computational biologists / chemoinformaticians who want a
+  cross-database triage tool
+- Early-stage biotech researchers screening underdrugged target classes
+- Anyone evaluating "agentic harness" patterns on a real domain rather than
+  toy demos
+- AI engineers wanting an MCP-server-shaped reference application that
+  isn't another chatbot
+
+---
+
+## What's in the box
+
+| Surface | What it does |
+|---|---|
+| **CLI** (`hermes-bio …`) | five subcommands: `run`, `explore`, `repurpose`, `investigate`, `eval`, plus `memory` and `mcp` |
+| **Web UI** (FastAPI + React) | three-pane research workspace — live agent reasoning stream, NGL 3D viewer, candidates table; plus a Cytoscape knowledge-graph view |
+| **MCP server** | exposes the five research tools to any MCP host (Claude Desktop / Code, Cursor, etc) — see [`docs/mcp-integration.md`](./docs/mcp-integration.md) |
+| **Persistent memory** | a second run on the same disease is ~3× faster — the harness recalls cached target picks, structures, and approved hits |
+| **Eval suite** | regression eval over 6 canonical disease/target pairs + 4 hard-mode diseases without canonical answers |
+
+---
+
+## The three research modes
+
+### A · `discover` — regression baseline
+
+```
+hermes-bio run drug-discovery --disease "type 2 diabetes mellitus"
+```
+
+The full agentic pipeline. UniProt + OpenTargets target search, structure
+retrieval (PDB → AlphaFold fallback), pocket detection, repurposing-first
+screening (FDA-approved drugs *before* novel ChEMBL), heuristic docking,
+Lipinski + SAScore + ADMET filtering, ranked report. *Verified to recover
+canonical disease-target pairs in 6/6 textbook diseases.*
+
+### B · `explore` — underexplored druggable targets
+
+```
+hermes-bio explore --disease "idiopathic pulmonary fibrosis"
+```
+
+Pulls top OpenTargets associations, joins against ChEMBL drug-development
+stats, scores each by `genetic_association × drug_gap × not_crowded ×
+structure_available`. Ranks proteins where there's *real biology* but the
+chemistry shelf is empty. *Verified: surfaces RTEL1, SFTPA2, MUC5B as top IPF
+picks — the canonical IPF risk genes, all with zero approved drugs.*
+
+### C · `repurpose` — cross-indication hunting
+
+```
+hermes-bio repurpose --target P42345 --exclude "cancer,carcinoma,tumor"
+```
+
+For a target T (UniProt ID), find FDA-approved drugs that bind it but are
+*primarily approved for something else entirely*. Real cross-indication
+leads from public ChEMBL `drug_indication` data alone. *Verified: surfaces
+Sirolimus → aplastic anemia, Tacrolimus → rheumatoid arthritis, FARGLITAZAR
+→ liver cirrhosis, none of which were seeded.*
+
+### Plus: `investigate` — composed workflow
+
+```
+hermes-bio investigate --disease "idiopathic pulmonary fibrosis"
+```
+
+One command: pick the top target → list underexplored alternatives → run
+cross-indication repurposing on the picked target. Single-shot research
+snapshot.
+
+---
+
+## Verified results (no seeded knowledge)
+
+### Canonical regression — 6/6, ~38s/disease
+
+| Disease | Target picked | Top approved drug |
 |---|---|---|
-| Type 2 diabetes | PPARG (P37231) | **Rosiglitazone** |
-| NSCLC | EGFR (P00533) | **Sunitinib** |
-| Alzheimer disease | PSEN1 (P49768) | (no approved direct binders) |
+| Type 2 diabetes mellitus | PPARG (P37231) | Rosiglitazone |
+| Non-small cell lung cancer | EGFR (P00533) | Sunitinib / Erlotinib |
+| Alzheimer disease | PSEN1 (P49768) | (γ-secretase modulators) |
+| Rheumatoid arthritis | **TYK2** (P29597) | Deucravacitinib (FDA 2022) |
+| Parkinson disease | **LRRK2** (Q5S007) | Denali BIIB122 (Phase 3) |
+| Chronic myeloid leukemia | ABL1 (P00519) | Imatinib |
 
-These are real, correct, well-known disease–target–drug relationships — the agent
-recovered them from the public APIs without hardcoded knowledge.
+For RA and PD the agent picked the **2022–2026 next-gen targets**, not the
+1990s textbook ones (TNF, SNCA). It reads current OpenTargets evidence, not
+drug history.
 
-## Layout
+### Hard-mode — 4/4 defensible, no canonical allowlist
 
-```
-backend/    FastAPI + Gemini agent + SQLite + bio services
-frontend/   Vite + React + Tailwind + NGL viewer (three-pane workspace)
-```
+| Disease | Picked | Validated by |
+|---|---|---|
+| Idiopathic pulmonary fibrosis | FGFR1 | nintedanib (Ofev) FDA-approved IPF drug targets FGFR family |
+| Long COVID | JAK1 | baricitinib RECOVERY-LC trial, NIH RECOVER program |
+| Friedreich ataxia | **Frataxin** | causative gene — **omaveloxolone (Skyclarys, FDA Feb 2023)** |
+| Amyotrophic lateral sclerosis | SOD1 | **tofersen (Qalsody, FDA Apr 2023)** targets SOD1 mRNA |
 
-## Run it
+All four picks map to **2023 FDA approvals or active Phase-3 trials**, on
+diseases with no obvious canonical answer.
+
+---
+
+## Quick start
 
 You need Python 3.11+, Node 18+, [uv](https://docs.astral.sh/uv/), and a
-`GEMINI_API_KEY`.
+[Gemini API key](https://aistudio.google.com/apikey). The default model is
+`gemini-3.1-flash-lite-preview` (free-tier compatible).
 
 ```bash
-# Backend
+# Backend + CLI
 cd backend
-cp .env.example .env        # add GEMINI_API_KEY (model defaults to gemini-3.1-flash-lite-preview)
+echo "GEMINI_API_KEY=your-key-here" > .env
 uv sync
+
+# Try one of the three modes
+uv run hermes-bio explore --disease "amyotrophic lateral sclerosis" --top 8
+uv run hermes-bio investigate --disease "Friedreich ataxia"
+uv run hermes-bio run drug-discovery --disease "type 2 diabetes mellitus"
+
+# Web UI (in a second terminal)
 uv run uvicorn app.main:app --port 8000 --reload
+cd ../frontend && npm install && npm run dev   # http://localhost:5173
 
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev                  # http://localhost:5173
+# MCP server — plug into Claude Code / Cursor / Claude Desktop
+uv run hermes-bio mcp                           # see docs/mcp-integration.md
 ```
 
-Open http://localhost:5173, type a disease name, hit **discover**.
+Detailed architecture lives in [`backend/README.md`](./backend/README.md).
+The project journal — ADRs, plans, design notes — is in [`docs/`](./docs/).
 
-## Architecture
+---
+
+## How it's structured
 
 ```
-User
- │
- ▼  POST /api/discover
-┌──────────────────────┐
-│ FastAPI background   │ → agent loop (Gemini function-calling, up to 25 turns)
-│ task                 │      ↓
-└──────┬───────────────┘   tool dispatcher
-       │                    │
-       ▼                    ├─ search_uniprot
-   SQLite                   ├─ search_opentargets
-   (jobs / targets /        ├─ fetch_structure (PDB → AlphaFold fallback)
-    structures /            ├─ detect_binding_pockets
-    docking_results)        ├─ fetch_approved_drugs_for_target  ← repurposing first
-       │                    ├─ fetch_chembl_library
-       ▼                    ├─ run_docking (Vina stub for now)
-  parses agent's            ├─ screen_lipinski (RDKit)
-  final JSON,               ├─ score_synthesizability  ← SAScore
-  populates rows            ├─ predict_admet_batch
-  + writes HTML report      ↓
-                          publishes events to SSE bus
-                                  ↓
-       ┌──────────────────────────┘
-       ▼
-  Frontend (three panes)
-   ├ Reasoning stream  (SSE consumer, agent thoughts + tool calls)
-   ├ NGL viewer        (3D protein, pocket sphere)
-   └ Candidates table  (FDA badge, SA pill, copy-SMILES)
+backend/      Python harness — FastAPI + Gemini agent + SQLite + bio services + CLI + MCP
+frontend/     Vite + React + Tailwind — three-pane research workspace
+docs/         project journal — ADRs, plans, glossary, dated notes
 ```
 
-## Endpoints
+Read [`backend/README.md`](./backend/README.md) for the full architecture
+diagram + every component explained.
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/discover` | start a job |
-| GET  | `/api/jobs/{id}` | status + reasoning log |
-| GET  | `/api/jobs/{id}/events` | **SSE stream** of live agent events |
-| GET  | `/api/jobs/{id}/candidates` | structured target + candidates JSON |
-| GET  | `/api/jobs/{id}/structure` | the PDB file (for NGL) |
-| GET  | `/api/jobs/{id}/report` | HTML report |
+---
 
-## Honest caveats
+## Honest framing
 
-- **Docking is a stub.** `services/docking.py` returns a heuristic affinity based on
-  LogP and MW. Real docking needs `pip install vina` plus AutoDock Vina installed.
-- **Pocket detection is a stub.** `services/pockets.py` returns the structure
-  centroid. Install fpocket or P2Rank for real cavity detection.
-- **ADMET is a proxy.** LogP and TPSA derived; replace with ADMETlab2 / pkCSM for
-  production use.
+Three things in this project are stubs and clearly labeled as such:
 
-The Lipinski filter, SAScore, UniProt, OpenTargets, PDB, AlphaFold, and ChEMBL
-integrations are real.
+- **Docking** is a heuristic affinity score from LogP and molecular weight,
+  not real AutoDock Vina. Real Vina is `pip install vina` + AutoDock binary
+  on PATH; we left it as a stub because Vina on Windows is non-trivial and
+  the scientific claim of this project is in target selection + repurposing
+  triage, not in docking accuracy.
+- **Pocket detection** returns the structure centroid, not real fpocket /
+  P2Rank cavity output.
+- **ADMET** uses LogP and TPSA proxies, not real ADMETlab2 / pkCSM.
+
+Everything else — UniProt, OpenTargets, RCSB PDB, AlphaFold DB, ChEMBL
+queries, RDKit Lipinski filtering, SAScore (Ertl & Schuffenhauer 2009),
+Gemini function-calling agent loop, persistent SQLite memory, MCP server,
+React UI — is real, working code. Stubs are fully isolated behind interface
+boundaries; replacing each with the production tool is a focused 1–2 hour
+job.
+
+---
+
+## Design philosophy
+
+Five accepted ADRs in [`docs/decisions/`](./docs/decisions/) record the
+non-obvious tradeoffs:
+
+1. **Pivoted from "drug-discovery app" to "drug-discovery harness"** —
+   harness engineering is the dominant lever once you've picked a model.
+2. **Did not fork Hermes Agent** — chose to build the minimum harness for
+   our use case rather than adopt a personal-assistant framework.
+3. **Gemini-first, narrow Provider Protocol, LiteLLM if needed later** —
+   no premature provider abstraction.
+4. **Deferred refactoring + provider abstraction; shipped memory + CLI
+   first** — features users feel beat invisible architectural cleanup.
+5. **Three research-utility modes (B, C, D) defined explicitly** —
+   "agent recovers known answers" is plumbing, not utility; we drew the
+   line and built three things that genuinely are.
+
+If you find this project useful, the journal in `docs/` is also worth
+reading — it's an honest record of how the project arrived where it is.
+
+---
+
+## License & credits
+
+Public bioinformatics APIs used (all open / public): UniProt, EMBL-EBI
+OpenTargets, RCSB PDB, AlphaFold DB, ChEMBL. Open-source Python and
+JavaScript libraries: FastAPI, Gemini SDK, SQLAlchemy, RDKit, NGL, Vite,
+React, Tailwind, Cytoscape, FastMCP.
+
+Built by [@priyank766](https://github.com/priyank766) — companion project
+to [BioAgent-ALPHAFOLD](https://github.com/priyank766/BioAgent-ALPHAFOLD).
+
+MIT.

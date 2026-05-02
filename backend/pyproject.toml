@@ -17,6 +17,7 @@ dependencies = [
     "biopython>=1.84",
     "rdkit>=2024.3.5",
     "py3Dmol>=2.4",
+    "fastmcp>=0.4",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,49 @@
+{
+  "disease": "idiopathic pulmonary fibrosis",
+  "primary_target": {
+    "ensembl_id": "ENSG00000140694",
+    "symbol": "PARN",
+    "name": "poly(A)-specific ribonuclease",
+    "uniprot_id": "O95453",
+    "association_score": 0.7901795648477856
+  },
+  "underexplored": [
+    {
+      "uniprot_id": "Q9NZ71",
+      "symbol": "RTEL1",
+      "name": "regulator of telomere elongation helicase 1",
+      "association_score": 0.732608102831634,
+      "max_phase_reached": 0,
+      "compound_count": 0,
+      "approved_count": 0,
+      "has_structure": true,
+      "underexplored_score": 0.7326,
+      "label": "highly underexplored"
+    },
+    {
+      "uniprot_id": "Q8IWL1",
+      "symbol": "SFTPA2",
+      "name": "surfactant protein A2",
+      "association_score": 0.7147605504081332,
+      "max_phase_reached": 0,
+      "compound_count": 0,
+      "approved_count": 0,
+      "has_structure": true,
+      "underexplored_score": 0.7148,
+      "label": "highly underexplored"
+    },
+    {
+      "uniprot_id": "Q9HC84",
+      "symbol": "MUC5B",
+      "name": "mucin 5B, oligomeric mucus/gel-forming",
+      "association_score": 0.6486514046729224,
+      "max_phase_reached": 0,
+      "compound_count": 0,
+      "approved_count": 0,
+      "has_structure": false,
+      "underexplored_score": 0.1946,
+      "label": "low signal"
+    }
+  ],
+  "cross_indication": []
+}

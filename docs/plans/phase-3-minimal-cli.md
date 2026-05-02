@@ -29,16 +29,22 @@ hermes-bio skills list
 
 ## Implementation
 
-- [ ] `core/cli/__main__.py` using `click` or `typer` (lighter — argparse if
-      we want zero deps)
-- [ ] `core/config.py` extended: read `~/.hermes-bio/config.toml`
-- [ ] Streaming: subscribe to the same internal event bus the SSE endpoint
-      uses, render line-by-line to stdout (color via `rich` optional)
-- [ ] `--output json` returns the final structured result as a single JSON
-      blob (matches current `/api/jobs/{id}/candidates` shape)
-- [ ] Exit codes: 0 success, 1 agent failure, 2 user error (bad args)
-- [ ] Make the CLI importable as a module and invokable as `python -m hermes_bio`
-      AND as a `hermes-bio` script (entry point in `pyproject.toml`)
+- [x] `app/cli.py` using argparse (zero deps, per ADR-0004 layout deferral)
+- [x] Streaming: subscribes to the in-memory `workers.events` bus same as SSE
+- [x] ANSI color output to TTY only; falls back to plain text in pipes
+- [x] `--output json` emits final structured result + status as one JSON blob
+- [x] Exit codes: 0 success, 1 agent failure, 2 user error (bad subcommand)
+- [x] `hermes-bio` script entry point via `[project.scripts]` + hatchling
+- [x] Forces `sys.stdout.reconfigure(encoding="utf-8")` for Windows cp1252
+- [x] **Verified**: `hermes-bio run drug-discovery --disease "..."` produces
+      streaming output matching the frontend's reasoning panel; memory
+      recall card prints in purple; final report path emitted on done.
+
+## Deferred to Phase 3.1 (when needed)
+
+- `~/.hermes-bio/config.toml` for persistent BYOK (today: env var / `.env`)
+- `--provider anthropic` flag (waiting on Phase 2)
+- `python -m app.cli` invocation (the entry-point script is enough for now)
 
 ## Verification
 

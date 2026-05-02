@@ -50,6 +50,13 @@ SKILLS = {
 
 # ----- commands ------------------------------------------------------------
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Start the MCP server (stdio). Plug into Claude Code, Cursor, etc."""
+    from .mcp_server import main as mcp_main
+    mcp_main()
+    return 0
+
+
 def cmd_skills_list(args: argparse.Namespace) -> int:
     print(_color("available skills:", BOLD))
     for name, info in SKILLS.items():
@@ -92,6 +99,200 @@ async def _memory_clear(args: argparse.Namespace) -> int:
     from .db import init_db
     await init_db()
     return await memory.clear(args.scope, prefix=args.prefix)
+
+
+def cmd_explore(args: argparse.Namespace) -> int:
+    return asyncio.run(_cmd_explore(args))
+
+
+async def _cmd_explore(args: argparse.Namespace) -> int:
+    from .services.underexplored import find_underexplored_targets
+    print(_color(f"▲ hermes-bio · explore", BOLD))
+    print(_color(f"  hunting underexplored druggable targets for: {args.disease}", DIM))
+    print(_color("  filter: high genetic association × low max_phase × structure available", DIM))
+    print()
+    rows = await find_underexplored_targets(args.disease, top_n=args.top)
+    if not rows:
+        print(_color("  no targets found", DIM))
+        return 1
+    print(_color(f"  {'symbol':<10} {'uniprot':<10} {'assoc':>6} {'max_ph':>6} {'cmpds':>6} {'struct':>6}  {'score':>6}  label", DIM))
+    print(_color("  " + "-" * 110, DIM))
+    for r in rows[:args.top]:
+        sym = (r["symbol"] or "?")[:10].ljust(10)
+        u = (r["uniprot_id"] or "-")[:10].ljust(10)
+        assoc = f"{r['association_score']:.2f}" if r["association_score"] else "  -  "
+        u_score = r["underexplored_score"]
+        score_color = EMERALD if u_score > 0.4 else AMBER if u_score > 0.2 else DIM
+        score_str = _color(f"{u_score:.3f}", score_color)
+        struct = "yes" if r["has_structure"] else "no"
+        max_ph = r["max_phase_reached"]
+        cmpds = r["compound_count"]
+        print(f"  {_color(sym, EMERALD)} {u} {assoc:>6} {max_ph:>6} {cmpds:>6} {struct:>6}  {score_str:>15}  {r['label']}")
+        if args.verbose and r["name"]:
+            print(_color(f"             {r['name']}", DIM))
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(rows, f, indent=2)
+        print(_color(f"\n  written {len(rows)} entries to {args.json}", DIM))
+    return 0
+
+
+def cmd_repurpose(args: argparse.Namespace) -> int:
+    return asyncio.run(_cmd_repurpose(args))
+
+
+async def _cmd_repurpose(args: argparse.Namespace) -> int:
+    from .services.cross_repurposing import cross_indication_candidates
+    from .services.opentargets import get_validated_targets
+
+    excludes = [s.strip() for s in (args.exclude or "").split(",") if s.strip()]
+    target = args.target
+
+    # --from-disease shortcut: pick the top OpenTargets target, then repurpose on it
+    if args.from_disease:
+        print(_color(f"▲ hermes-bio · repurpose --from-disease", BOLD))
+        print(_color(f"  picking top target for: {args.from_disease}", DIM))
+        targets = await get_validated_targets(args.from_disease, size=5)
+        chosen = next((t for t in targets if t.get("uniprot_id")), None)
+        if not chosen:
+            print(_color("  could not pick a target — no OpenTargets hits with UniProt mapping", RED), file=sys.stderr)
+            return 1
+        target = chosen["uniprot_id"]
+        print(_color(f"  picked: {target} ({chosen.get('symbol')}) — {chosen.get('name')}", EMERALD))
+        # Auto-exclude disease keywords if user didn't supply
+        if not excludes:
+            words = [w for w in args.from_disease.lower().split() if len(w) > 3]
+            excludes = words
+            print(_color(f"  auto-exclude keywords: {', '.join(excludes)}", DIM))
+        print()
+
+    print(_color(f"▲ hermes-bio · repurpose", BOLD))
+    print(_color(f"  cross-indication hunt for target: {target}", DIM))
+    if excludes:
+        print(_color(f"  excluding indications matching: {', '.join(excludes)}", DIM))
+    print()
+    rows = await cross_indication_candidates(target, exclude_disease_keywords=excludes)
+    if not rows:
+        print(_color("  no candidates found", DIM))
+        return 1
+    print(_color(f"  {'name':<28} {'potency':>10} {'type':>5}  approved indications (non-excluded)", DIM))
+    print(_color("  " + "-" * 110, DIM))
+    cross = [r for r in rows if r.get("is_cross_indication")]
+    for r in cross[:args.top]:
+        name = (r["name"] or r["chembl_id"])[:28].ljust(28)
+        pot = f"{r['potency_nm']:.1f}nM" if r["potency_nm"] < 1e6 else "—"
+        t = (r["potency_type"] or "")[:5].rjust(5)
+        ind = (r.get("all_indications_summary") or "—")[:70]
+        print(f"  {_color(name, EMERALD)} {pot:>10} {t}  {ind}")
+    print(_color(f"\n  {len(cross)} cross-indication candidates (out of {len(rows)} approved binders)", DIM))
+    if not cross and rows:
+        print(_color("  (no cross-indication hits — all binders' approved indications match excluded keywords)", DIM))
+        print(_color("  inspecting top binders for diagnostic:", DIM))
+        for r in rows[:5]:
+            name = (r.get("name") or r["chembl_id"])[:28].ljust(28)
+            ind = (r.get("all_indications_summary") or "(no indication data)")[:70]
+            print(f"    {name}  {ind}")
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(rows, f, indent=2)
+    return 0
+
+
+def cmd_investigate(args: argparse.Namespace) -> int:
+    return asyncio.run(_cmd_investigate(args))
+
+
+async def _cmd_investigate(args: argparse.Namespace) -> int:
+    """Compose Modes A + B + C into one workflow for a researcher."""
+    from .services.opentargets import get_validated_targets
+    from .services.underexplored import find_underexplored_targets
+    from .services.cross_repurposing import cross_indication_candidates
+
+    disease = args.disease
+    print(_color("▲ hermes-bio · investigate", BOLD))
+    print(_color(f"  unified workflow: pick target → underexplored alternatives → cross-indication leads", DIM))
+    print(_color(f"  disease: {disease}", DIM))
+    print()
+
+    # Step 1 — pick top target via OpenTargets (cheap, no agent loop)
+    print(_color("─── step 1 · top OpenTargets target ───", BOLD))
+    ts = await get_validated_targets(disease, size=5)
+    chosen = next((t for t in ts if t.get("uniprot_id")), None)
+    if not chosen:
+        print(_color("  could not resolve disease to a target", RED), file=sys.stderr)
+        return 1
+    target_uniprot = chosen["uniprot_id"]
+    print(_color(f"  {target_uniprot} ({chosen.get('symbol')}) — {chosen.get('name')}", EMERALD))
+    print(_color(f"  association_score = {chosen.get('association_score'):.3f}", DIM))
+    print()
+
+    # Step 2 — underexplored alternatives
+    print(_color("─── step 2 · underexplored alternative targets ───", BOLD))
+    rows = await find_underexplored_targets(disease, top_n=10)
+    high = [r for r in rows if r["underexplored_score"] > 0.15][:5]
+    if not high:
+        print(_color("  (no strongly underexplored alternatives in top OpenTargets hits)", DIM))
+    for r in high:
+        sc = r["underexplored_score"]
+        sym = (r["symbol"] or "?")[:10].ljust(10)
+        print(f"  {_color(sym, EMERALD)} {r['uniprot_id']:<10} score={sc:.3f}  {r['label']}")
+    print()
+
+    # Step 3 — cross-indication on the chosen target
+    print(_color("─── step 3 · cross-indication repurposing on top target ───", BOLD))
+    excludes = [w for w in disease.lower().split() if len(w) > 3]
+    print(_color(f"  excluding indication keywords: {', '.join(excludes)}", DIM))
+    cands = await cross_indication_candidates(target_uniprot, exclude_disease_keywords=excludes)
+    cross = [c for c in cands if c.get("is_cross_indication")][:6]
+    if not cross:
+        print(_color("  (no cross-indication leads — all approved binders are within-disease)", DIM))
+    for c in cross:
+        name = (c.get("name") or c["chembl_id"])[:28].ljust(28)
+        pot = f"{c['potency_nm']:.1f}nM" if c["potency_nm"] < 1e6 else "—"
+        ind = (c.get("all_indications_summary") or "—")[:60]
+        print(f"  {_color(name, EMERALD)} {pot:>10}  {ind}")
+    print()
+
+    # Wrap-up summary
+    print(_color("─── investigate summary ───", BOLD))
+    print(f"  primary target:       {_color(target_uniprot, EMERALD)} ({chosen.get('symbol')})")
+    print(f"  underexplored alts:   {len(high)}")
+    print(f"  cross-indication:     {len(cross)} approved drugs with off-disease use")
+
+    if args.json:
+        out = {
+            "disease": disease,
+            "primary_target": chosen,
+            "underexplored": high,
+            "cross_indication": cross,
+        }
+        with open(args.json, "w") as f:
+            json.dump(out, f, indent=2, default=str)
+        print(_color(f"\n  written to {args.json}", DIM))
+
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    return asyncio.run(_cmd_eval(args))
+
+
+async def _cmd_eval(args: argparse.Namespace) -> int:
+    from . import eval as eval_mod
+    diseases = args.diseases.split(",") if args.diseases else None
+    print(_color("▲ hermes-bio · eval", BOLD))
+    if args.hard:
+        print(_color("  HARD MODE — diseases without canonical targets; pick will need manual review", DIM))
+    else:
+        print(_color("  agentic harness regression — does the agent recover canonical targets?", DIM))
+    print()
+    report = await eval_mod.run_eval(diseases, hard=args.hard)
+    eval_mod.print_summary(report)
+    if args.json:
+        with open(args.json, "w") as f:
+            json.dump(report, f, indent=2)
+        print(_color(f"\n  report written to {args.json}", DIM))
+    return 0 if report["passed"] == report["total"] else 1
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -145,6 +346,12 @@ async def _run_drug_discovery(args: argparse.Namespace) -> int:
     listener = asyncio.create_task(reader())
     await asyncio.gather(runner, listener)
 
+    # Determine success from final job status (not just whether json was captured)
+    from .db import Job, SessionLocal as _SL
+    async with _SL() as s:
+        j = await s.get(Job, job_id)
+        succeeded = bool(j and j.status == "completed")
+
     if args.output == "json":
         # Emit candidates from DB (covers the case where SSE missed events)
         from .db import Job, Target, Structure
@@ -160,9 +367,9 @@ async def _run_drug_discovery(args: argparse.Namespace) -> int:
         if final_holder.get("data"):
             out["result"] = final_holder["data"]
         print(json.dumps(out, indent=2, default=str))
-        return 0 if (job and job.status == "completed") else 1
+        return 0 if succeeded else 1
 
-    return 0 if final_holder else 1
+    return 0 if succeeded else 1
 
 
 def _print_event(evt: dict) -> None:
@@ -210,13 +417,49 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--disease", help="disease name (drug-discovery skill)")
     p_run.add_argument("--output", choices=["pretty", "json"], default="pretty")
     p_run.add_argument("--gemini-key", help="override GEMINI_API_KEY for this run")
+    p_run.add_argument("--model", help="override Gemini model (e.g. gemini-3.1-pro-preview)")
     p_run.set_defaults(func=cmd_run)
+
+    # mcp — expose as MCP server
+    p_mcp = sub.add_parser("mcp", help="start MCP server (stdio) — connects to Claude Code / Cursor / any MCP host")
+    p_mcp.set_defaults(func=cmd_mcp)
 
     # skills
     p_skills = sub.add_parser("skills", help="manage skills")
     p_skills_sub = p_skills.add_subparsers(dest="skills_cmd", required=True)
     p_skills_list = p_skills_sub.add_parser("list", help="list available skills")
     p_skills_list.set_defaults(func=cmd_skills_list)
+
+    # explore — Mode B: underexplored targets
+    p_exp = sub.add_parser("explore", help="hunt underexplored druggable targets for a disease (Mode B)")
+    p_exp.add_argument("--disease", required=True)
+    p_exp.add_argument("--top", type=int, default=10)
+    p_exp.add_argument("--json", help="write JSON report")
+    p_exp.add_argument("-v", "--verbose", action="store_true")
+    p_exp.set_defaults(func=cmd_explore)
+
+    # repurpose — Mode C: cross-indication
+    p_rep = sub.add_parser("repurpose", help="find FDA-approved drugs that bind a target but are approved for OTHER conditions (Mode C)")
+    p_rep.add_argument("--target", help="UniProt ID, e.g. P00533")
+    p_rep.add_argument("--from-disease", help="auto-pick top target for this disease then repurpose on it")
+    p_rep.add_argument("--exclude", help="comma-separated keywords matching primary indication to skip (e.g. 'cancer,lung')")
+    p_rep.add_argument("--top", type=int, default=15)
+    p_rep.add_argument("--json", help="write JSON report")
+    p_rep.set_defaults(func=cmd_repurpose)
+
+    # investigate — compose A+B+C
+    p_inv = sub.add_parser("investigate", help="unified workflow: pick target → underexplored alts → cross-indication")
+    p_inv.add_argument("--disease", required=True)
+    p_inv.add_argument("--json", help="write JSON report")
+    p_inv.set_defaults(func=cmd_investigate)
+
+    # eval
+    p_eval = sub.add_parser("eval", help="run the canonical-targets regression suite (Mode A)")
+    p_eval.add_argument("--diseases", help="comma-separated subset (default: all)")
+    p_eval.add_argument("--json", help="write full report JSON to this path")
+    p_eval.add_argument("--hard", action="store_true", help="run hard-mode diseases (no canonical answer)")
+    p_eval.add_argument("--model", help="override Gemini model")
+    p_eval.set_defaults(func=cmd_eval)
 
     # memory
     p_mem = sub.add_parser("memory", help="inspect / clear harness memory")
@@ -245,6 +488,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if getattr(args, "gemini_key", None):
         os.environ["GEMINI_API_KEY"] = args.gemini_key
+    if getattr(args, "model", None):
+        # Mutate settings before any agent code runs; settings is a singleton.
+        from .config import settings
+        settings.gemini_model = args.model
     return args.func(args)
 
 

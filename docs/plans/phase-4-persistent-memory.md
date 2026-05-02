@@ -34,17 +34,23 @@ the user, conversation history. This is a research tool, not a chatbot.
 
 ## Steps
 
-- [ ] Add `harness_memory` table
-- [ ] `core/memory.py` with `get(scope, key)`, `put(scope, key, value, ttl)`,
-      `recall(scope) -> dict` for batch
-- [ ] In `skills/drug_discovery/`, decorate selected service calls to write
-      results to memory
-- [ ] In orchestrator, before the first model call, fetch memory for
-      `(skill, disease_normalized)` and inject as a system note
-- [ ] CLI subcommands above
-- [ ] Verify: run "type 2 diabetes" twice. Second run uses cached UniProt /
-      OpenTargets / structure / approved-drug data; agent log shows "using
-      cached target P37231 from 2 minutes ago".
+- [x] Add `harness_memory` table (in `app/db.py`, not `core/`, per ADR-0004)
+- [x] `app/memory.py` with `get`, `put`, `recall`, `clear`; key normalizers
+      (`disease_key`, `uniprot_key`, `pdb_key`); TTL constants
+- [x] In `pipeline.py`, `_persist_memory_for(job_id, disease)` writes
+      target+structure+approved-hits at end of successful run
+- [x] In `orchestrator.run_agent`, accept `memory_note` and inject as
+      `<harness-memory>` block in system prompt
+- [x] In `pipeline.py`, `_build_memory_note(disease)` reads cached entry,
+      formats prose note, publishes `memory_recall` event for UI
+- [x] API endpoints: `GET /api/memory`, `DELETE /api/memory`
+- [x] CLI subcommands: `memory show [-v]`, `memory clear [--prefix ...]`
+- [x] Frontend ReasoningStream renders `memory_recall` (purple 🧠 card)
+- [x] **Verified**: ran "type 2 diabetes mellitus" twice. First run ~90s,
+      populated memory. Second run ~27s, fired memory recall, agent
+      jumped straight to cached UniProt P37231 + PDB 1FM6, skipped redundant
+      exploration. Same target, same structure, same approved-drug class
+      (Rosiglitazone). 🧠 line visible in CLI stdout and frontend stream.
 
 ## What we are explicitly not building
 

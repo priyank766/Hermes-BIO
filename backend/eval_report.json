@@ -1,0 +1,98 @@
+{
+  "total": 6,
+  "passed": 4,
+  "score": "4/6",
+  "elapsed_seconds": 227.6,
+  "results": [
+    {
+      "disease": "type 2 diabetes mellitus",
+      "picked_uniprot": "P37231",
+      "picked_protein": "Peroxisome proliferator-activated receptor gamma (PPARG)",
+      "accepted_targets": [
+        "P37231",
+        "P14672",
+        "Q92887",
+        "Q9Y5Y9"
+      ],
+      "pass_": true,
+      "duration_seconds": 31.0,
+      "error": null,
+      "job_id": "7b3d91e58ac2"
+    },
+    {
+      "disease": "non-small cell lung cancer",
+      "picked_uniprot": "P00533",
+      "picked_protein": "Epidermal growth factor receptor (EGFR)",
+      "accepted_targets": [
+        "P00533",
+        "P04626",
+        "P15056",
+        "P36888"
+      ],
+      "pass_": true,
+      "duration_seconds": 43.7,
+      "error": null,
+      "job_id": "534c1a6f0ee8"
+    },
+    {
+      "disease": "Alzheimer disease",
+      "picked_uniprot": "P49768",
+      "picked_protein": "Presenilin-1",
+      "accepted_targets": [
+        "P49768",
+        "P05067",
+        "P10636",
+        "Q9NR96",
+        "P49810"
+      ],
+      "pass_": true,
+      "duration_seconds": 29.3,
+      "error": null,
+      "job_id": "41d8e5e5ef50"
+    },
+    {
+      "disease": "rheumatoid arthritis",
+      "picked_uniprot": "P29597",
+      "picked_protein": "Tyrosine kinase 2 (TYK2)",
+      "accepted_targets": [
+        "P01375",
+        "P05231",
+        "P14784",
+        "P40189"
+      ],
+      "pass_": false,
+      "duration_seconds": 28.2,
+      "error": null,
+      "job_id": "e2859184356a"
+    },
+    {
+      "disease": "Parkinson disease",
+      "picked_uniprot": "Q5S007",
+      "picked_protein": "Leucine-rich repeat kinase 2 (LRRK2)",
+      "accepted_targets": [
+        "P37840",
+        "Q99497",
+        "O60260",
+        "P09936"
+      ],
+      "pass_": false,
+      "duration_seconds": 32.8,
+      "error": null,
+      "job_id": "af2d29d308b1"
+    },
+    {
+      "disease": "chronic myeloid leukemia",
+      "picked_uniprot": "P00519",
+      "picked_protein": "Tyrosine-protein kinase ABL1",
+      "accepted_targets": [
+        "P00519",
+        "P11274",
+        "P10721"
+      ],
+      "pass_": true,
+      "duration_seconds": 62.6,
+      "error": null,
+      "job_id": "b62a79a68402"
+    }
+  ]
+}
