@@ -1,6 +1,25 @@
-# hermes-bio
+<div align="center">
 
-**An agentic harness for drug-discovery research.**
+```
+██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗      ██████╗ ██╗ ██████╗
+██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝      ██╔══██╗██║██╔═══██╗
+███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗█████╗██████╔╝██║██║   ██║
+██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║╚════╝██╔══██╗██║██║   ██║
+██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║      ██████╔╝██║╚██████╔╝
+╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝      ╚═════╝ ╚═╝ ╚═════╝
+```
+
+**An agentic harness for drug-discovery research**
+
+`disease name` → ranked candidates · underexplored targets · cross-indication leads
+
+[CLI](#quick-start) · [Web UI](#whats-in-the-box) · [MCP server](./docs/mcp-integration.md) · [Architecture](./backend/README.md) · [Journal](./docs/)
+
+</div>
+
+---
+
+
 You give it a disease name. It picks a target, finds underexplored druggable
 alternatives, surfaces FDA-approved drugs that bind that target but are
 approved for *other* diseases, and ranks candidate compounds — all by chaining
@@ -185,6 +204,68 @@ The project journal — ADRs, plans, design notes — is in [`docs/`](./docs/).
 backend/      Python harness — FastAPI + Gemini agent + SQLite + bio services + CLI + MCP
 frontend/     Vite + React + Tailwind — three-pane research workspace
 docs/         project journal — ADRs, plans, glossary, dated notes
+```
+
+```mermaid
+graph TB
+    subgraph Surfaces["Surfaces (BYOK)"]
+        WebUI["React UI<br/>3-pane workspace"]
+        CLI["CLI<br/>hermes-bio …"]
+        MCP["MCP Server<br/>stdio"]
+    end
+
+    subgraph Backend["Backend (FastAPI + Python · async)"]
+        API["FastAPI REST + SSE"]
+        Agent["Gemini Agent Loop<br/>function-calling, retries"]
+        Modes["Research Modes<br/>explore · repurpose · investigate"]
+        Pipeline["Pipeline Worker<br/>extract JSON · render report"]
+        Memory["Persistent Memory<br/>scope:key with TTL"]
+        Tools["Tool Registry<br/>10 bio tools"]
+        DB[("SQLite<br/>jobs · targets · structures<br/>docking · harness_memory")]
+    end
+
+    subgraph BioTools["Bioinformatics Sources (public APIs)"]
+        UP["UniProt<br/>disease → proteins"]
+        OT["OpenTargets<br/>association scores"]
+        PDB["RCSB PDB<br/>experimental structures"]
+        AF["AlphaFold DB<br/>predicted structures"]
+        ChEMBL["ChEMBL<br/>bioactivity + drug_indication"]
+        RDKit["RDKit<br/>Lipinski + SAScore"]
+    end
+
+    subgraph Frontend["Frontend (Vite + React + TypeScript)"]
+        Stream["Reasoning Stream<br/>(SSE)"]
+        Viewer["NGL 3D Viewer<br/>protein + pocket"]
+        Graph["Cytoscape Graph<br/>disease → target → drug"]
+        Cards["Candidates Table<br/>FDA · SA · MoA"]
+    end
+
+    WebUI -->|HTTP + SSE| API
+    CLI -->|in-process| Pipeline
+    CLI -->|in-process| Modes
+    MCP -->|stdio JSON-RPC| Modes
+    MCP -->|stdio JSON-RPC| Pipeline
+
+    API --> Pipeline
+    API --> Modes
+    Pipeline --> Memory
+    Pipeline --> Agent
+    Modes --> Tools
+    Agent --> Tools
+    Pipeline --> DB
+    Memory --> DB
+
+    Tools --> UP
+    Tools --> OT
+    Tools --> PDB
+    Tools --> AF
+    Tools --> ChEMBL
+    Tools --> RDKit
+
+    API -->|SSE events| Stream
+    API -->|JSON| Cards
+    API -->|PDB file| Viewer
+    API -->|graph JSON| Graph
 ```
 
 Read [`backend/README.md`](./backend/README.md) for the full architecture

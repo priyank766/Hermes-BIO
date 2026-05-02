@@ -50,8 +50,14 @@ When ending work that mattered, write:
 - A new ADR in `decisions/` if a tradeoff was made.
 - Update the current plan's checklist.
 
-## Why this is not just CLAUDE.md
+## Relationship to the top-level READMEs
 
-`CLAUDE.md` is the front door — high-level brief, kept short. This dir is the
-detailed history that informs how the front door is interpreted. They serve
-different purposes; both should exist.
+- `README.md` (root) is the **public-facing** explanation: what this project
+  is, why it exists, how to run it.
+- `backend/README.md` is the **architecture** doc: stack, modules, schema,
+  endpoints, agent loop internals.
+- `docs/` (this dir) is the **journal**: ADRs, plans, dated notes — the
+  history of *why* the project looks the way it does, not just what it is.
+
+The top-level README is for visitors. The journal is for whoever is doing
+the next session of work.
