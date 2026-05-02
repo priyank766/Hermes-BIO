@@ -11,6 +11,7 @@ const ICONS: Record<string, string> = {
   done: "✔",
   error: "✗",
   structured_result: "📋",
+  memory_recall: "🧠",
 };
 
 const COLORS: Record<string, string> = {
@@ -22,6 +23,7 @@ const COLORS: Record<string, string> = {
   done: "text-accent",
   error: "text-red-400",
   structured_result: "text-accent",
+  memory_recall: "text-purple-300",
 };
 
 export default function ReasoningStream({ jobId }: { jobId: string }) {
@@ -71,6 +73,15 @@ function EventLine({ e }: { e: ReasoningEvent }) {
         <span className="text-zinc-600 text-[11px] mr-2">{time}</span>
         <span className={color}>{icon} {e.name}</span>
         {e.summary && <span className="text-zinc-600 ml-2">{truncate(e.summary, 90)}</span>}
+      </div>
+    );
+  }
+  if (e.type === "memory_recall") {
+    return (
+      <div className="my-2 px-3 py-2 bg-purple-950/30 border-l-2 border-purple-400 rounded-r whitespace-pre-wrap">
+        <span className="text-zinc-600 text-[11px] mr-2">{time}</span>
+        <span className={color}>{icon} memory recall</span>
+        <div className="text-purple-200 text-[12px] mt-1">{e.note}</div>
       </div>
     );
   }

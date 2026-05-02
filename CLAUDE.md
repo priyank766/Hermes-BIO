@@ -1,163 +1,91 @@
-Here's the complete brief you can hand off to another Claude agent:
+# CLAUDE.md — Project front door
 
----
+This file is the brief you read first. Keep it short. The detailed history,
+decisions, and plans live in [`docs/`](./docs/).
 
-## Drug Candidate Discovery Pipeline — Full Build Spec
+## What this project is (now)
 
-### What We're Building
+**An agentic harness for bioinformatics, with drug-discovery as the flagship
+skill.**
 
-An end-to-end agentic AI system where a user inputs a disease name and gets back a ranked list of drug candidates with a full scientific report. The agent autonomously chains together bioinformatics tools, reasons about intermediate results, and adapts its strategy based on what it finds.
+We pivoted on 2026-04-30 from "a drug-discovery app" to "a harness whose first
+skill is drug-discovery". See [`docs/decisions/0001-pivot-to-harness.md`](./docs/decisions/0001-pivot-to-harness.md)
+for the why.
 
-### Architecture
+A user feeds a disease name; the harness loads the `drug_discovery` skill;
+an LLM (Gemini today; Anthropic + others later) drives a tool-use loop over
+UniProt, OpenTargets, PDB/AlphaFold, ChEMBL, RDKit, and stub docking/ADMET to
+produce a ranked candidate list. Repurposing-first (FDA-approved drugs before
+novel ChEMBL); SAScore on every top hit; live SSE reasoning stream.
 
-```
-User Input (disease name)
-        │
-        ▼
-┌─────────────────────┐
-│  Agent Orchestrator  │  ← Claude API (reasoning + decision making)
-│  (FastAPI backend)   │
-└─────┬───────────────┘
-      │
-      ├──→ Step 1: Target Identification
-      │     - Query UniProt API for proteins associated with disease
-      │     - Query OpenTargets API for validated drug targets
-      │     - Agent RANKS targets by druggability score
-      │     - Output: target protein ID + justification
-      │
-      ├──→ Step 2: Structure Retrieval
-      │     - Fetch 3D structure from PDB (if experimental structure exists)
-      │     - If not → call AlphaFold DB API for predicted structure
-      │     - Agent VALIDATES structure quality (pLDDT score check)
-      │     - If quality too low → try homology modeling fallback
-      │     - Output: .pdb file of target protein
-      │
-      ├──→ Step 3: Binding Site Detection
-      │     - Use P2Rank or fpocket to detect binding pockets
-      │     - Agent SELECTS the most promising pocket based on:
-      │       volume, druggability score, proximity to known active sites
-      │     - Output: pocket coordinates + residue list
-      │
-      ├──→ Step 4: Molecule Library Screening
-      │     - Pull candidates from ZINC20 or ChEMBL (filtered subset)
-      │     - Run molecular docking via AutoDock Vina
-      │     - Agent decides batch size, timeout, and retry strategy
-      │     - Output: ranked molecules by binding affinity (kcal/mol)
-      │
-      ├──→ Step 5: Filtering & Validation
-      │     - Lipinski's Rule of 5 (druglikeness check)
-      │     - ADMET prediction (absorption, toxicity) via ADMETlab or pkCSM
-      │     - If top candidate fails toxicity → agent searches for structural analogs
-      │     - Output: filtered candidate list with pass/fail flags
-      │
-      └──→ Step 6: Report Generation
-            - Full PDF/HTML report with:
-              • Disease background
-              • Target protein rationale
-              • 3D binding visualization (py3Dmol)
-              • Ranked candidates table
-              • ADMET profiles
-              • Confidence scores + limitations
-            - Output: downloadable report
-```
+## Read these first when starting a session
 
-### Tech Stack
+1. **[`docs/notes/`](./docs/notes/)** (latest by date) — current state of the
+   project, what works, what's stubbed.
+2. **[`docs/decisions/`](./docs/decisions/)** — accepted ADRs. These are the
+   constraints. Newest first:
+   - `0003-provider-strategy.md` — Gemini-first, narrow Protocol, LiteLLM later
+   - `0002-build-minimal-not-fork-hermes.md` — don't fork Nous Hermes
+   - `0001-pivot-to-harness.md` — why we're a harness, not an app
+3. **[`docs/plans/`](./docs/plans/)** — current phase. As of writing: phase 0
+   complete, phase 1 (refactor into `core/` + `skills/`) is up next.
+4. **[`docs/open-questions.md`](./docs/open-questions.md)** — known unresolved
+   design choices.
+5. **[`docs/glossary.md`](./docs/glossary.md)** — terms.
 
-| Component | Tool |
-|---|---|
-| Backend | FastAPI (Python) |
-| Agent brain | Claude API with tool_use |
-| Protein data | UniProt API, PDB API, AlphaFold DB API |
-| Target validation | OpenTargets API |
-| Binding pockets | P2Rank or fpocket |
-| Docking | AutoDock Vina (via Python bindings `vina` package) |
-| Molecule library | ZINC20 subset or ChEMBL API |
-| Druglikeness | RDKit (Lipinski filters) |
-| ADMET | ADMETlab2 API or pkCSM API |
-| 3D visualization | py3Dmol (embedded in report) |
-| Report | Jinja2 templates → HTML/PDF |
-| Frontend | React + Tailwind (simple dashboard) |
-| Deploy | Railway or Fly.io (backend) + Vercel (frontend) |
+## When you finish work that mattered
 
-### Database / State
+- Add or update a note in `docs/notes/` if state changed.
+- Write a new ADR in `docs/decisions/` if you made a tradeoff.
+- Tick checkboxes in the current `docs/plans/phase-*.md`.
+- Don't edit old ADRs. Supersede with new ones.
+
+## Code layout (current — pre-Phase-1)
 
 ```
-PostgreSQL (or SQLite for MVP):
-  - jobs table: id, disease_input, status, created_at
-  - targets table: job_id, uniprot_id, protein_name, druggability_score
-  - structures table: target_id, pdb_path, source (PDB/AlphaFold), quality_score
-  - docking_results table: structure_id, molecule_smiles, binding_affinity, rank
-  - admet_results table: molecule_id, lipinski_pass, toxicity_score, absorption_score
-  - reports table: job_id, report_path, generated_at
+backend/    FastAPI + Gemini agent + SQLite + bio services
+frontend/   Vite + React + Tailwind + NGL viewer (3-pane research UI)
+docs/       project journal (read CLAUDE.md → docs/ before coding)
 ```
 
-### What Makes It Agentic (Not Just a Pipeline)
+Code layout will change in Phase 1 (refactor into `core/`, `skills/`, `web/`,
+`cli/`). See `docs/plans/phase-1-refactor-into-core-skills.md`.
 
-The Claude agent makes real decisions at each step:
+## Run it
 
-1. **Target selection** — if multiple proteins are linked to the disease, it reasons about which one is most druggable and explains why
-2. **Structure fallback** — if PDB has no good structure, it tries AlphaFold; if AlphaFold quality is low, it flags this and adjusts confidence
-3. **Docking retry** — if initial docking gives poor results (all affinities > -5 kcal/mol), it widens the molecule search or tries a different binding pocket
-4. **Toxic candidate handling** — if the best binder is toxic, it doesn't just drop it; it searches for structural analogs with similar binding but better safety profiles
-5. **Confidence scoring** — every output includes the agent's confidence and reasoning, not just raw numbers
+Backend (`backend/`): `uv sync && uv run uvicorn app.main:app --port 8000`
+(needs `GEMINI_API_KEY` in `backend/.env`).
+Frontend (`frontend/`): `npm install && npm run dev` → http://localhost:5173
 
-### API Endpoints
+## Verified disease runs (proof the agent picks real targets)
 
-```
-POST /api/discover
-  body: { "disease": "Alzheimer's" }
-  returns: { "job_id": "abc123", "status": "started" }
+| Disease | Target picked | Top approved drug found |
+|---|---|---|
+| Type 2 diabetes | PPARG (P37231) | Rosiglitazone |
+| NSCLC | EGFR (P00533) | Sunitinib |
+| Alzheimer disease | PSEN1 (P49768) | (no max_phase=4 binders) |
 
-GET /api/jobs/{job_id}
-  returns: { "status": "docking", "progress": 65, "current_step": 4 }
+These are real disease/target/drug relationships recovered from public APIs,
+not hardcoded.
 
-GET /api/jobs/{job_id}/report
-  returns: { "report_url": "/reports/abc123.html", "candidates": [...] }
+## Honest stubs (replace for production)
 
-GET /api/jobs/{job_id}/candidates
-  returns: [{ "smiles": "...", "affinity": -8.2, "lipinski": true, "toxicity": "low" }]
-```
+- Docking — heuristic affinity from LogP/MW. Real Vina needs `pip install vina`.
+- Pockets — centroid only. Wire fpocket or P2Rank.
+- ADMET — LogP/TPSA proxies. Real ADMETlab2 / pkCSM not integrated.
 
-### Frontend Pages
+UniProt, OpenTargets, PDB, AlphaFold, ChEMBL, Lipinski, SAScore are real.
 
-1. **Home** — input disease name, hit "Discover"
-2. **Job tracker** — live progress bar showing which step the agent is on, with reasoning logs streaming in real-time
-3. **Results** — interactive table of candidates, 3D protein viewer (py3Dmol), downloadable report
+## Non-goals (explicit)
 
-### MVP Scope (What to Build First)
+- Terminal UI / Claude-Code-style frontend
+- Self-modifying skills (Hermes-style emergent skill creation)
+- Telegram / Discord / Slack / WhatsApp connectors
+- Hosting other people's API keys (BYOK only)
 
-**Week 1:**
-- FastAPI skeleton with Claude tool_use agent loop
-- UniProt + AlphaFold API integration (Steps 1-2)
-- Basic binding pocket detection with fpocket
-- SQLite for state
+## Hand-off note
 
-**Week 2:**
-- AutoDock Vina docking with a small ZINC subset (~1000 molecules)
-- RDKit Lipinski filtering
-- HTML report generation with Jinja2
-- Simple React frontend with job tracking
-
-**Week 3:**
-- ADMET predictions
-- Analog search fallback logic
-- py3Dmol 3D visualization in report
-- Deploy to Railway + Vercel
-
-### Key Python Packages
-
-```
-pip install fastapi uvicorn anthropic
-pip install biopython          # UniProt/PDB parsing
-pip install vina               # AutoDock Vina bindings
-pip install rdkit              # Molecule analysis, Lipinski
-pip install fpocket            # Binding pocket detection (or use P2Rank CLI)
-pip install py3Dmol            # 3D visualization
-pip install jinja2             # Report templates
-pip install sqlalchemy         # Database ORM
-pip install httpx              # Async API calls
-```
-
----
-
-Copy this entire thing and hand it to the other agent. It has everything needed to start building.
+If you're a future Claude session: do not pretend to remember things from
+prior sessions. Read `docs/notes/` and `docs/decisions/` first. The
+codebase is the source of truth for what runs; `docs/` is the source of
+truth for *why* it runs that way.

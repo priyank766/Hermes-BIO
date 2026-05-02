@@ -23,13 +23,23 @@ def _build_tools() -> list[types.Tool]:
 async def run_agent(
     disease: str,
     on_event: Callable[[dict], Awaitable[None]] | None = None,
+    memory_note: str | None = None,
 ) -> dict:
-    """Run the agent loop. on_event is called with reasoning/tool events."""
+    """Run the agent loop. on_event is called with reasoning/tool events.
+
+    memory_note: optional prose injected as a system-reminder before the user
+    turn. Use it to surface facts the harness already knows (cached structures,
+    prior target picks for this disease class, etc.).
+    """
     client = genai.Client(api_key=settings.gemini_api_key)
     tools = _build_tools()
 
+    system_instruction = SYSTEM_PROMPT
+    if memory_note:
+        system_instruction = f"{SYSTEM_PROMPT}\n\n<harness-memory>\n{memory_note}\n</harness-memory>"
+
     config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=system_instruction,
         tools=tools,
         temperature=0.4,
     )

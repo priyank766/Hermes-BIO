@@ -1,6 +1,7 @@
 export type ReasoningEvent = {
   ts: string;
-  type: "status" | "reasoning" | "tool_call" | "tool_result" | "retry" | "done" | "error" | "structured_result";
+  type: "status" | "reasoning" | "tool_call" | "tool_result" | "retry" | "done" | "error" | "structured_result" | "memory_recall";
+  note?: string;
   iteration?: number;
   text?: string;
   name?: string;

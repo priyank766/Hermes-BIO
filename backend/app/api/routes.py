@@ -14,6 +14,7 @@ from ..workers.pipeline import run_pipeline
 from ..workers import events as bus
 from ..config import settings
 from ..services.explain import explain_mechanism
+from .. import memory
 
 router = APIRouter(prefix="/api")
 
@@ -202,6 +203,19 @@ async def get_graph(job_id: str, s: AsyncSession = Depends(get_session)) -> dict
                     "weight": abs(d.binding_affinity),
                 }})
     return {"nodes": nodes, "edges": edges}
+
+
+@router.get("/memory")
+async def get_memory(scope: str = "drug_discovery", prefix: str | None = None) -> dict:
+    """Inspect what the harness remembers."""
+    items = await memory.recall(scope, prefix=prefix)
+    return {"scope": scope, "prefix": prefix, "items": items, "count": len(items)}
+
+
+@router.delete("/memory")
+async def clear_memory(scope: str = "drug_discovery", prefix: str | None = None) -> dict:
+    deleted = await memory.clear(scope, prefix=prefix)
+    return {"scope": scope, "prefix": prefix, "deleted": deleted}
 
 
 @router.get("/jobs/{job_id}/report")

@@ -11,7 +11,10 @@ from sqlalchemy.orm import selectinload
 from ..db import SessionLocal, Job, Target, Structure, DockingResult
 from ..agent.orchestrator import run_agent
 from ..services.reports import render_report
+from .. import memory
 from . import events as bus
+
+SCOPE = "drug_discovery"
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +118,67 @@ def _find_pdb_path_in_log(log_entries: list[dict]) -> str | None:
     return None
 
 
+async def _build_memory_note(disease: str) -> str | None:
+    """Read what the harness already knows about this disease class."""
+    cached = await memory.get(SCOPE, memory.disease_key(disease))
+    if not cached:
+        return None
+    v = cached["value"]
+    target_uniprot = v.get("target_uniprot")
+    target_name = v.get("target_name")
+    structure_pdb = v.get("structure_pdb")
+    pocket_center = v.get("pocket_center")
+    approved_hits = v.get("approved_hits") or []
+    bits = [
+        f"On a previous run for this disease class on {cached['created_at'][:10]}, you chose:",
+        f"- target: {target_uniprot} ({target_name})" if target_uniprot else None,
+        f"- structure: PDB {structure_pdb}" if structure_pdb else None,
+        f"- pocket_center: {pocket_center}" if pocket_center else None,
+    ]
+    if approved_hits:
+        bits.append(f"- top approved hits: {', '.join(h.get('name') or h.get('chembl_id') or '?' for h in approved_hits[:5])}")
+    bits.append("Reuse these if they still look right; revisit if you have a better idea.")
+    return "\n".join(b for b in bits if b)
+
+
+async def _persist_memory_for(job_id: str, disease: str) -> None:
+    """After a successful run, cache target+structure+top approved drugs."""
+    async with SessionLocal() as s:
+        stmt = select(Job).where(Job.id == job_id).options(
+            selectinload(Job.targets)
+            .selectinload(Target.structures)
+            .selectinload(Structure.docking_results)
+        )
+        res = await s.execute(stmt)
+        job = res.scalar_one_or_none()
+        if not job or not job.targets:
+            return
+        t = job.targets[0]
+        st = t.structures[0] if t.structures else None
+        approved = [
+            {
+                "rank": d.rank, "smiles": d.molecule_smiles, "name": d.molecule_name,
+                "affinity": d.binding_affinity,
+            }
+            for d in (sorted(st.docking_results, key=lambda x: x.rank) if st else [])
+            if d.is_approved_drug
+        ][:5]
+    payload = {
+        "target_uniprot": t.uniprot_id,
+        "target_name": t.protein_name,
+        "structure_pdb": (st.pdb_path.split("\\")[-1].split("/")[-1].split("_")[0].split(".")[0]) if st else None,
+        "structure_source": st.source if st else None,
+        "pocket_center": (st.pocket_data or {}).get("center") if st else None,
+        "approved_hits": approved,
+        "last_job_id": job_id,
+    }
+    await memory.put(SCOPE, memory.disease_key(disease), payload, ttl=memory.TTL_TARGET_PICK)
+    if t.uniprot_id:
+        await memory.put(SCOPE, memory.uniprot_key(t.uniprot_id),
+                         {"name": t.protein_name, "structure_pdb": payload["structure_pdb"]},
+                         ttl=memory.TTL_STRUCTURE)
+
+
 async def run_pipeline(job_id: str, disease: str) -> None:
     log.info("starting job %s for %s", job_id, disease)
     async with SessionLocal() as s:
@@ -126,13 +190,18 @@ async def run_pipeline(job_id: str, disease: str) -> None:
 
     await bus.publish(job_id, {"type": "status", "status": "running", "ts": datetime.utcnow().isoformat()})
 
+    memory_note = await _build_memory_note(disease)
+    if memory_note:
+        await bus.publish(job_id, {"type": "memory_recall", "note": memory_note,
+                                   "ts": datetime.utcnow().isoformat()})
+
     async def on_event(evt: dict) -> None:
         evt_full = {"ts": datetime.utcnow().isoformat(), **evt}
         await bus.publish(job_id, evt_full)
         await _append_log(job_id, evt)
 
     try:
-        result = await run_agent(disease, on_event=on_event)
+        result = await run_agent(disease, on_event=on_event, memory_note=memory_note)
         final_text = result.get("final_text", "")
 
         async with SessionLocal() as s:
@@ -207,6 +276,11 @@ async def run_pipeline(job_id: str, disease: str) -> None:
                 j.status = "completed"
                 j.progress = 100
                 await s.commit()
+        # Cache learnings for next run
+        try:
+            await _persist_memory_for(job_id, disease)
+        except Exception:
+            log.exception("memory persist failed (non-fatal)")
         log.info("job %s done -> %s", job_id, report_path)
         await bus.publish(job_id, {"type": "done", "report_path": report_path,
                                    "ts": datetime.utcnow().isoformat()})

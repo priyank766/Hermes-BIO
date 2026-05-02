@@ -70,6 +70,18 @@ class DockingResult(Base):
     structure: Mapped["Structure"] = relationship(back_populates="docking_results")
 
 
+class HarnessMemory(Base):
+    """Persistent KV store for the harness. Scope = which skill / namespace
+    owns this entry; key = a stable, normalized identifier."""
+    __tablename__ = "harness_memory"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String, index=True)
+    key: Mapped[str] = mapped_column(String, index=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 engine = create_async_engine(settings.database_url, echo=False)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
