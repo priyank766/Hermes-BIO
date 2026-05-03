@@ -1,4 +1,4 @@
-"""hermes-bio CLI — minimal entry point.
+"""hermes-bio CLI -- minimal entry point.
 
 Spirit of `claude` / `codex` / `gemini` CLIs but ~100x simpler. Streams the
 same agent event bus to stdout, returns the structured result.
@@ -41,7 +41,7 @@ def _color(text: str, code: str) -> str:
 
 SKILLS = {
     "drug-discovery": {
-        "description": "Disease → ranked drug candidates (UniProt, OpenTargets, "
+        "description": "Disease to ranked drug candidates (UniProt, OpenTargets, "
                        "PDB/AlphaFold, ChEMBL, RDKit). Repurposing-first, SAScore-aware.",
         "required": ["--disease"],
     },
@@ -107,9 +107,9 @@ def cmd_explore(args: argparse.Namespace) -> int:
 
 async def _cmd_explore(args: argparse.Namespace) -> int:
     from .services.underexplored import find_underexplored_targets
-    print(_color(f"▲ hermes-bio · explore", BOLD))
+    print(_color("hermes-bio :: explore", BOLD))
     print(_color(f"  hunting underexplored druggable targets for: {args.disease}", DIM))
-    print(_color("  filter: high genetic association × low max_phase × structure available", DIM))
+    print(_color("  filter: high genetic association | low max_phase | structure available", DIM))
     print()
     rows = await find_underexplored_targets(args.disease, top_n=args.top)
     if not rows:
@@ -148,25 +148,23 @@ async def _cmd_repurpose(args: argparse.Namespace) -> int:
     excludes = [s.strip() for s in (args.exclude or "").split(",") if s.strip()]
     target = args.target
 
-    # --from-disease shortcut: pick the top OpenTargets target, then repurpose on it
     if args.from_disease:
-        print(_color(f"▲ hermes-bio · repurpose --from-disease", BOLD))
+        print(_color(f"hermes-bio :: repurpose --from-disease", BOLD))
         print(_color(f"  picking top target for: {args.from_disease}", DIM))
         targets = await get_validated_targets(args.from_disease, size=5)
         chosen = next((t for t in targets if t.get("uniprot_id")), None)
         if not chosen:
-            print(_color("  could not pick a target — no OpenTargets hits with UniProt mapping", RED), file=sys.stderr)
+            print(_color("  could not pick a target -- no OpenTargets hits with UniProt mapping", RED), file=sys.stderr)
             return 1
         target = chosen["uniprot_id"]
-        print(_color(f"  picked: {target} ({chosen.get('symbol')}) — {chosen.get('name')}", EMERALD))
-        # Auto-exclude disease keywords if user didn't supply
+        print(_color(f"  picked: {target} ({chosen.get('symbol')}) -- {chosen.get('name')}", EMERALD))
         if not excludes:
             words = [w for w in args.from_disease.lower().split() if len(w) > 3]
             excludes = words
             print(_color(f"  auto-exclude keywords: {', '.join(excludes)}", DIM))
         print()
 
-    print(_color(f"▲ hermes-bio · repurpose", BOLD))
+    print(_color(f"hermes-bio :: repurpose", BOLD))
     print(_color(f"  cross-indication hunt for target: {target}", DIM))
     if excludes:
         print(_color(f"  excluding indications matching: {', '.join(excludes)}", DIM))
@@ -180,13 +178,13 @@ async def _cmd_repurpose(args: argparse.Namespace) -> int:
     cross = [r for r in rows if r.get("is_cross_indication")]
     for r in cross[:args.top]:
         name = (r["name"] or r["chembl_id"])[:28].ljust(28)
-        pot = f"{r['potency_nm']:.1f}nM" if r["potency_nm"] < 1e6 else "—"
+        pot = f"{r['potency_nm']:.1f}nM" if r["potency_nm"] < 1e6 else "-"
         t = (r["potency_type"] or "")[:5].rjust(5)
-        ind = (r.get("all_indications_summary") or "—")[:70]
+        ind = (r.get("all_indications_summary") or "-")[:70]
         print(f"  {_color(name, EMERALD)} {pot:>10} {t}  {ind}")
     print(_color(f"\n  {len(cross)} cross-indication candidates (out of {len(rows)} approved binders)", DIM))
     if not cross and rows:
-        print(_color("  (no cross-indication hits — all binders' approved indications match excluded keywords)", DIM))
+        print(_color("  (no cross-indication hits -- all binders' approved indications match excluded keywords)", DIM))
         print(_color("  inspecting top binders for diagnostic:", DIM))
         for r in rows[:5]:
             name = (r.get("name") or r["chembl_id"])[:28].ljust(28)
@@ -203,31 +201,28 @@ def cmd_investigate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_investigate(args: argparse.Namespace) -> int:
-    """Compose Modes A + B + C into one workflow for a researcher."""
     from .services.opentargets import get_validated_targets
     from .services.underexplored import find_underexplored_targets
     from .services.cross_repurposing import cross_indication_candidates
 
     disease = args.disease
-    print(_color("▲ hermes-bio · investigate", BOLD))
-    print(_color(f"  unified workflow: pick target → underexplored alternatives → cross-indication leads", DIM))
+    print(_color("hermes-bio :: investigate", BOLD))
+    print(_color(f"  unified workflow: pick target -> underexplored alternatives -> cross-indication leads", DIM))
     print(_color(f"  disease: {disease}", DIM))
     print()
 
-    # Step 1 — pick top target via OpenTargets (cheap, no agent loop)
-    print(_color("─── step 1 · top OpenTargets target ───", BOLD))
+    print(_color("[1] top OpenTargets target", BOLD))
     ts = await get_validated_targets(disease, size=5)
     chosen = next((t for t in ts if t.get("uniprot_id")), None)
     if not chosen:
         print(_color("  could not resolve disease to a target", RED), file=sys.stderr)
         return 1
     target_uniprot = chosen["uniprot_id"]
-    print(_color(f"  {target_uniprot} ({chosen.get('symbol')}) — {chosen.get('name')}", EMERALD))
+    print(_color(f"  {target_uniprot} ({chosen.get('symbol')}) -- {chosen.get('name')}", EMERALD))
     print(_color(f"  association_score = {chosen.get('association_score'):.3f}", DIM))
     print()
 
-    # Step 2 — underexplored alternatives
-    print(_color("─── step 2 · underexplored alternative targets ───", BOLD))
+    print(_color("[2] underexplored alternative targets", BOLD))
     rows = await find_underexplored_targets(disease, top_n=10)
     high = [r for r in rows if r["underexplored_score"] > 0.15][:5]
     if not high:
@@ -238,23 +233,21 @@ async def _cmd_investigate(args: argparse.Namespace) -> int:
         print(f"  {_color(sym, EMERALD)} {r['uniprot_id']:<10} score={sc:.3f}  {r['label']}")
     print()
 
-    # Step 3 — cross-indication on the chosen target
-    print(_color("─── step 3 · cross-indication repurposing on top target ───", BOLD))
+    print(_color("[3] cross-indication repurposing on top target", BOLD))
     excludes = [w for w in disease.lower().split() if len(w) > 3]
     print(_color(f"  excluding indication keywords: {', '.join(excludes)}", DIM))
     cands = await cross_indication_candidates(target_uniprot, exclude_disease_keywords=excludes)
     cross = [c for c in cands if c.get("is_cross_indication")][:6]
     if not cross:
-        print(_color("  (no cross-indication leads — all approved binders are within-disease)", DIM))
+        print(_color("  (no cross-indication leads -- all approved binders are within-disease)", DIM))
     for c in cross:
         name = (c.get("name") or c["chembl_id"])[:28].ljust(28)
-        pot = f"{c['potency_nm']:.1f}nM" if c["potency_nm"] < 1e6 else "—"
-        ind = (c.get("all_indications_summary") or "—")[:60]
+        pot = f"{c['potency_nm']:.1f}nM" if c["potency_nm"] < 1e6 else "-"
+        ind = (c.get("all_indications_summary") or "-")[:60]
         print(f"  {_color(name, EMERALD)} {pot:>10}  {ind}")
     print()
 
-    # Wrap-up summary
-    print(_color("─── investigate summary ───", BOLD))
+    print(_color("[summary]", BOLD))
     print(f"  primary target:       {_color(target_uniprot, EMERALD)} ({chosen.get('symbol')})")
     print(f"  underexplored alts:   {len(high)}")
     print(f"  cross-indication:     {len(cross)} approved drugs with off-disease use")
@@ -280,11 +273,11 @@ def cmd_eval(args: argparse.Namespace) -> int:
 async def _cmd_eval(args: argparse.Namespace) -> int:
     from . import eval as eval_mod
     diseases = args.diseases.split(",") if args.diseases else None
-    print(_color("▲ hermes-bio · eval", BOLD))
+    print(_color("hermes-bio :: eval", BOLD))
     if args.hard:
-        print(_color("  HARD MODE — diseases without canonical targets; pick will need manual review", DIM))
+        print(_color("  HARD MODE -- diseases without canonical targets; pick will need manual review", DIM))
     else:
-        print(_color("  agentic harness regression — does the agent recover canonical targets?", DIM))
+        print(_color("  agentic harness regression -- does the agent recover canonical targets?", DIM))
     print()
     report = await eval_mod.run_eval(diseases, hard=args.hard)
     eval_mod.print_summary(report)
@@ -315,19 +308,17 @@ async def _run_drug_discovery(args: argparse.Namespace) -> int:
     await init_db()
 
     job_id = uuid.uuid4().hex[:12]
-    # We need a Job row to satisfy pipeline's DB access
     from .db import SessionLocal, Job
     async with SessionLocal() as s:
         s.add(Job(id=job_id, disease_input=args.disease, status="pending"))
         await s.commit()
 
     if args.output != "json":
-        print(_color(f"▲ hermes-bio · drug-discovery", BOLD))
+        print(_color(f"hermes-bio :: drug-discovery", BOLD))
         print(_color(f"  disease: {args.disease}", DIM))
         print(_color(f"  job:     {job_id}", DIM))
         print()
 
-    # Subscribe to the bus and run the pipeline concurrently
     final_holder: dict[str, Any] = {}
 
     async def reader() -> None:
@@ -346,14 +337,12 @@ async def _run_drug_discovery(args: argparse.Namespace) -> int:
     listener = asyncio.create_task(reader())
     await asyncio.gather(runner, listener)
 
-    # Determine success from final job status (not just whether json was captured)
     from .db import Job, SessionLocal as _SL
     async with _SL() as s:
         j = await s.get(Job, job_id)
         succeeded = bool(j and j.status == "completed")
 
     if args.output == "json":
-        # Emit candidates from DB (covers the case where SSE missed events)
         from .db import Job, Target, Structure
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
@@ -374,32 +363,32 @@ async def _run_drug_discovery(args: argparse.Namespace) -> int:
 
 def _print_event(evt: dict) -> None:
     t = evt.get("type")
-    ts = (evt.get("ts") or "")[11:19]  # HH:MM:SS
+    ts = (evt.get("ts") or "")[11:19]
     if t == "status":
-        print(_color(f"[{ts}] ● status: {evt.get('status')}", DIM))
+        print(_color(f"[{ts}] status: {evt.get('status')}", DIM))
     elif t == "memory_recall":
-        print(_color(f"[{ts}] 🧠 memory recall:", PURPLE))
+        print(_color(f"[{ts}] memory recall:", PURPLE))
         for line in (evt.get("note") or "").splitlines():
-            print(_color(f"      {line}", PURPLE))
+            print(_color(f"         {line}", PURPLE))
     elif t == "reasoning":
-        print(_color(f"[{ts}] 💭 {evt.get('text', '')}", CYAN))
+        print(_color(f"[{ts}] reasoning: {evt.get('text', '')}", CYAN))
     elif t == "tool_call":
         args_s = ", ".join(f"{k}={truncate(str(v))}" for k, v in (evt.get("args") or {}).items())
-        print(_color(f"[{ts}] → {evt.get('name')}({args_s})", EMERALD))
+        print(_color(f"[{ts}] call {evt.get('name')}({args_s})", EMERALD))
     elif t == "tool_result":
-        print(_color(f"[{ts}] ✓ {evt.get('name')} {truncate(evt.get('summary', ''), 100)}", DIM))
+        print(_color(f"[{ts}] ok   {evt.get('name')} {truncate(evt.get('summary', ''), 100)}", DIM))
     elif t == "retry":
-        print(_color(f"[{ts}] ↻ retry HTTP {evt.get('code')} in {evt.get('delay')}s", AMBER))
+        print(_color(f"[{ts}] retry HTTP {evt.get('code')} in {evt.get('delay')}s", AMBER))
     elif t == "structured_result":
-        print(_color(f"[{ts}] 📋 final result captured", EMERALD))
+        print(_color(f"[{ts}] structured result captured", EMERALD))
     elif t == "done":
-        print(_color(f"[{ts}] ✔ pipeline complete → {evt.get('report_path')}", GREEN))
+        print(_color(f"[{ts}] done -- pipeline complete -> {evt.get('report_path')}", GREEN))
     elif t == "error":
-        print(_color(f"[{ts}] ✗ {evt.get('error')}", RED))
+        print(_color(f"[{ts}] error: {evt.get('error')}", RED))
 
 
 def truncate(s: str, n: int = 50) -> str:
-    return s if len(s) <= n else s[:n] + "…"
+    return s if len(s) <= n else s[:n] + "..."
 
 
 # ----- argparse ------------------------------------------------------------
@@ -411,7 +400,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    # run
     p_run = sub.add_parser("run", help="run a skill end-to-end")
     p_run.add_argument("skill", choices=list(SKILLS.keys()))
     p_run.add_argument("--disease", help="disease name (drug-discovery skill)")
@@ -420,17 +408,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--model", help="override Gemini model (e.g. gemini-3.1-pro-preview)")
     p_run.set_defaults(func=cmd_run)
 
-    # mcp — expose as MCP server
-    p_mcp = sub.add_parser("mcp", help="start MCP server (stdio) — connects to Claude Code / Cursor / any MCP host")
+    p_mcp = sub.add_parser("mcp", help="start MCP server (stdio) -- connects to Claude Code / Cursor / any MCP host")
     p_mcp.set_defaults(func=cmd_mcp)
 
-    # skills
     p_skills = sub.add_parser("skills", help="manage skills")
     p_skills_sub = p_skills.add_subparsers(dest="skills_cmd", required=True)
     p_skills_list = p_skills_sub.add_parser("list", help="list available skills")
     p_skills_list.set_defaults(func=cmd_skills_list)
 
-    # explore — Mode B: underexplored targets
     p_exp = sub.add_parser("explore", help="hunt underexplored druggable targets for a disease (Mode B)")
     p_exp.add_argument("--disease", required=True)
     p_exp.add_argument("--top", type=int, default=10)
@@ -438,22 +423,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_exp.add_argument("-v", "--verbose", action="store_true")
     p_exp.set_defaults(func=cmd_explore)
 
-    # repurpose — Mode C: cross-indication
     p_rep = sub.add_parser("repurpose", help="find FDA-approved drugs that bind a target but are approved for OTHER conditions (Mode C)")
     p_rep.add_argument("--target", help="UniProt ID, e.g. P00533")
     p_rep.add_argument("--from-disease", help="auto-pick top target for this disease then repurpose on it")
-    p_rep.add_argument("--exclude", help="comma-separated keywords matching primary indication to skip (e.g. 'cancer,lung')")
+    p_rep.add_argument("--exclude", help="comma-separated keywords matching primary indication to skip")
     p_rep.add_argument("--top", type=int, default=15)
     p_rep.add_argument("--json", help="write JSON report")
     p_rep.set_defaults(func=cmd_repurpose)
 
-    # investigate — compose A+B+C
-    p_inv = sub.add_parser("investigate", help="unified workflow: pick target → underexplored alts → cross-indication")
+    p_inv = sub.add_parser("investigate", help="unified workflow: pick target -> underexplored alts -> cross-indication")
     p_inv.add_argument("--disease", required=True)
     p_inv.add_argument("--json", help="write JSON report")
     p_inv.set_defaults(func=cmd_investigate)
 
-    # eval
     p_eval = sub.add_parser("eval", help="run the canonical-targets regression suite (Mode A)")
     p_eval.add_argument("--diseases", help="comma-separated subset (default: all)")
     p_eval.add_argument("--json", help="write full report JSON to this path")
@@ -461,7 +443,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval.add_argument("--model", help="override Gemini model")
     p_eval.set_defaults(func=cmd_eval)
 
-    # memory
     p_mem = sub.add_parser("memory", help="inspect / clear harness memory")
     p_mem_sub = p_mem.add_subparsers(dest="mem_cmd", required=True)
     p_mem_show = p_mem_sub.add_parser("show", help="dump memory entries")
@@ -478,7 +459,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Force utf-8 stdout on Windows so emoji + arrows don't cp1252-explode
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
         sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -489,7 +469,6 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "gemini_key", None):
         os.environ["GEMINI_API_KEY"] = args.gemini_key
     if getattr(args, "model", None):
-        # Mutate settings before any agent code runs; settings is a singleton.
         from .config import settings
         settings.gemini_model = args.model
     return args.func(args)

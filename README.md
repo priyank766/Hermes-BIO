@@ -19,6 +19,15 @@
 
 ---
 
+![home](./docs/screenshots/01-home.png)
+
+![workspace](./docs/screenshots/02-workspace-pparg.png)
+
+> The hero shot above is a real run on `type 2 diabetes mellitus` — agent picked **PPARG** (the textbook target), found **LY-510929** and **Rosiglitazone** as top FDA-approved repurposing leads, structure rendered from PDB 1FM6.
+> More screenshots (report, alternate diseases) live in [`docs/screenshots/`](./docs/screenshots/).
+
+---
+
 
 You give it a disease name. It picks a target, finds underexplored druggable
 alternatives, surfaces FDA-approved drugs that bind that target but are

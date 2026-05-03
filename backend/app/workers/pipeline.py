@@ -31,13 +31,74 @@ async def _append_log(job_id: str, entry: dict) -> None:
 
 
 def _clean_summary(text: str) -> str:
-    """Strip the JSON fenced block from the agent's final text — it's already in the
+    """Strip the JSON fenced block from the agent's final text -- it's already in the
     structured tables above. Keep only the prose rationale."""
     if not text:
         return ""
     cleaned = re.sub(r"```json\s*\{.*?\}\s*```", "", text, flags=re.DOTALL)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned
+
+
+def _summary_to_html(text: str) -> str:
+    """Convert the cleaned agent rationale (lightweight markdown) into safe HTML
+    for the report template. Handles ### headings, **bold**, lists, and paragraphs.
+    """
+    if not text:
+        return ""
+    import html as _html
+    lines = text.splitlines()
+    out: list[str] = []
+    in_list = False
+    paragraph: list[str] = []
+
+    def flush_para():
+        nonlocal paragraph
+        if paragraph:
+            joined = " ".join(p.strip() for p in paragraph if p.strip())
+            if joined:
+                out.append(f"<p>{_inline(joined)}</p>")
+            paragraph = []
+
+    def _inline(s: str) -> str:
+        s = _html.escape(s)
+        s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+        s = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<em>\1</em>", s)
+        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+        return s
+
+    for raw in lines:
+        line = raw.rstrip()
+        # heading
+        m = re.match(r"^#{1,6}\s+(.+)$", line)
+        if m:
+            if in_list:
+                out.append("</ul>"); in_list = False
+            flush_para()
+            out.append(f"<h3>{_inline(m.group(1))}</h3>")
+            continue
+        # bullet
+        m = re.match(r"^[-*]\s+(.+)$", line)
+        if m:
+            flush_para()
+            if not in_list:
+                out.append("<ul style='margin: 0.4em 0 0.6em 1.2em; padding: 0; list-style: disc;'>")
+                in_list = True
+            out.append(f"<li style='margin: 0.2em 0;'>{_inline(m.group(1))}</li>")
+            continue
+        # blank line -> end paragraph / list
+        if not line.strip():
+            if in_list:
+                out.append("</ul>"); in_list = False
+            flush_para()
+            continue
+        # accumulate paragraph text
+        paragraph.append(line)
+
+    if in_list:
+        out.append("</ul>")
+    flush_para()
+    return "\n".join(out)
 
 
 def _extract_json_block(text: str) -> Optional[dict]:
@@ -264,6 +325,7 @@ async def run_pipeline(job_id: str, disease: str) -> None:
                 "approved_candidates": [c for c in candidates_rows if c["is_approved_drug"]],
                 "novel_candidates": [c for c in candidates_rows if not c["is_approved_drug"]],
                 "summary_text": _clean_summary(final_text),
+                "summary_html": _summary_to_html(_clean_summary(final_text)),
                 "confidence": (parsed or {}).get("confidence"),
                 "limitations": (parsed or {}).get("limitations"),
                 "tool_calls": result.get("tool_calls", []),
